@@ -1,0 +1,11 @@
+apiVersion: traefik.io/v1alpha1
+kind: TLSStore
+metadata:
+  name: default
+  namespace: ${IP_NS}
+  labels:
+    ech.bz/managed-by: group-ingress-manager
+    ech.bz/ingress-group: "${GROUP}"
+spec:
+  defaultCertificate:
+    secretName: ${DEFAULT_CERT_SECRET}

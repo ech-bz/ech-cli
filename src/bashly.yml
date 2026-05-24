@@ -1,0 +1,52 @@
+name: ecli
+help: Cluster management CLI
+version: 0.1.0
+
+commands:
+- name: install
+  help: Install cluster infrastructure into an existing Kubernetes cluster
+  flags:
+  - long: --gitops-repo
+    short: -r
+    arg: url
+    help: "GitOps repo SSH URL (e.g. git@github.com:org/repo)"
+    required: true
+  - long: --gitops-path
+    arg: path
+    help: "Path in gitops repo to sync"
+    default: .
+  - long: --secret-backend
+    arg: backend
+    help: "Secret backend: kubernetes or aws"
+    allowed: [kubernetes, aws]
+    default: kubernetes
+  - long: --aws-region
+    arg: region
+    help: AWS region (required if backend=aws)
+  - long: --aws-access-key-id
+    arg: id
+    help: AWS access key ID (required if backend=aws)
+  - long: --aws-secret-access-key
+    arg: key
+    help: AWS secret access key (required if backend=aws)
+
+- name: uninstall
+  help: Remove cluster infrastructure installed by ecli from the current cluster
+
+- name: join-node
+  help: Join a worker node to an existing k3s cluster
+  flags:
+  - long: --url
+    short: -u
+    arg: url
+    help: "K3s server URL (e.g. https://1.2.3.4:6443)"
+    required: true
+  - long: --token
+    short: -t
+    arg: token
+    help: K3s node token (from /var/lib/rancher/k3s/server/node-token)
+    required: true
+  - long: --group
+    short: -g
+    arg: name
+    help: Ingress node group (DNS-1123 label; sets `ech.bz/ingress-group` and node-external-ip)

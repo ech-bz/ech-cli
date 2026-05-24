@@ -1,0 +1,93 @@
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: ${CLASS}
+  labels:
+    ech.bz/managed-by: group-ingress-manager
+    ech.bz/ingress-group: "${GROUP}"
+spec:
+  controller: traefik.io/ingress-controller
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: traefik-ip
+  namespace: ${IP_NS}
+  labels:
+    ech.bz/managed-by: group-ingress-manager
+    ech.bz/ingress-group: "${GROUP}"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: traefik-ip-${IP_HASH}
+  labels:
+    ech.bz/managed-by: group-ingress-manager
+    ech.bz/ingress-group: "${GROUP}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: traefik
+subjects:
+  - kind: ServiceAccount
+    name: traefik-ip
+    namespace: ${IP_NS}
+---
+apiVersion: traefik.io/v1alpha1
+kind: TLSStore
+metadata:
+  name: default
+  namespace: ${IP_NS}
+  labels:
+    ech.bz/managed-by: group-ingress-manager
+    ech.bz/ingress-group: "${GROUP}"
+spec:
+  defaultCertificate:
+    secretName: ${DEFAULT_CERT_SECRET}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: traefik-ip
+  namespace: ${IP_NS}
+  labels:
+    app: traefik-ip
+    ech.bz/managed-by: group-ingress-manager
+    ech.bz/ingress-group: "${GROUP}"
+spec:
+  selector:
+    matchLabels:
+      app: traefik-ip
+  template:
+    metadata:
+      labels:
+        app: traefik-ip
+        ech.bz/ingress-group: "${GROUP}"
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        kubernetes.io/hostname: "${NODE_NAME}"
+      serviceAccountName: traefik-ip
+      containers:
+        - name: traefik
+          image: traefik:v3.4
+          args:
+            - --entryPoints.web.address=:80
+            - --entryPoints.websecure.address=:443
+            - --providers.kubernetesingress
+            - --providers.kubernetesingress.ingressclass=${CLASS}
+            - --providers.kubernetesingress.namespaces=${GROUP_NS},${IP_NS}
+            - --providers.kubernetescrd
+            - --providers.kubernetescrd.ingressclass=${CLASS}
+            - --providers.kubernetescrd.allowcrossnamespace=true
+            - --providers.kubernetescrd.namespaces=${GROUP_NS},${IP_NS}
+          ports:
+            - name: web
+              containerPort: 80
+            - name: websecure
+              containerPort: 443
+          securityContext:
+            capabilities:
+              add: [NET_BIND_SERVICE]
+              drop: [ALL]
