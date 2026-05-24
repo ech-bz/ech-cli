@@ -1,0 +1,27 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ${ROUTE_NAME}
+  namespace: ${GROUP_NS}
+  labels:
+    ech.bz/managed-by: group-ingress-manager
+    ech.bz/ingress-group: "${GROUP}"
+    ech.bz/route-kind: dns-path
+  annotations:
+    kubernetes.io/ingress.class: "${CLASS}"
+    ech.bz/domain: "${DOMAIN}"
+    ech.bz/path-prefix: "${PATH_PREFIX}"
+    ech.bz/path-prefix-hash: "${PATH_PREFIX_HASH}"
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`$DOMAIN`) && PathPrefix(`$PATH_PREFIX`)
+      kind: Rule
+      priority: ${ROUTE_PRIORITY}
+      services:
+        - name: ${SERVICE_NAME}
+          namespace: ${SERVICE_NAMESPACE}
+          port: ${SERVICE_PORT}
+  tls:
+    secretName: ${DOMAIN_SECRET}

@@ -1,0 +1,17 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ${DOMAIN_NAME}
+  namespace: ${GROUP_NS}
+  labels:
+    ech.bz/managed-by: group-ingress-manager
+    ech.bz/ingress-group: "${GROUP}"
+    ech.bz/domain: "${DOMAIN}"
+spec:
+  secretName: ${DOMAIN_SECRET}
+  dnsNames:
+    - "${DOMAIN}"
+  issuerRef:
+    name: ${ISSUER_NAME}
+    kind: ${ISSUER_KIND}
+    group: cert-manager.io
