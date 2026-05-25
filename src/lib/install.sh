@@ -1,3 +1,40 @@
+storage_class_exists() {
+  kubectl get storageclass "$1" >/dev/null 2>&1
+}
+
+ensure_storage_class() {
+  local desired_storage_class
+  desired_storage_class="ech-rwo"
+
+  if storage_class_exists "$desired_storage_class"; then
+    echo "StorageClass ${desired_storage_class} already exists."
+    return
+  fi
+
+  echo "StorageClass ${desired_storage_class} not found. Installing Longhorn..."
+  helm upgrade --install longhorn longhorn/longhorn \
+    --namespace longhorn-system --create-namespace \
+    --wait --timeout 20m
+
+  echo "Waiting for Longhorn components..."
+  kubectl -n longhorn-system rollout status daemonset/longhorn-manager --timeout=10m
+  kubectl -n longhorn-system rollout status deployment/longhorn-driver-deployer --timeout=10m
+  kubectl -n longhorn-system rollout status deployment/longhorn-ui --timeout=10m
+
+  if storage_class_exists "$desired_storage_class"; then
+    echo "StorageClass ${desired_storage_class} is available."
+    return
+  fi
+
+  if ! storage_class_exists longhorn; then
+    echo "ERROR: Longhorn installed but StorageClass 'longhorn' was not created" >&2
+    exit 1
+  fi
+
+  echo "Creating StorageClass ${desired_storage_class} backed by Longhorn..."
+  kubectl apply -f "$(ecli_assets_dir)/storage_class_longhorn.yaml"
+}
+
 run_install() {
   ensure_kubectl_access
 
@@ -9,16 +46,21 @@ run_install() {
   helm repo add --force-update jetstack https://charts.jetstack.io
   helm repo add --force-update fluxcd-community https://fluxcd-community.github.io/helm-charts
   helm repo add --force-update external-secrets https://charts.external-secrets.io
+  helm repo add --force-update longhorn https://charts.longhorn.io
   helm repo update
 
-  # 3. cert-manager
+  # 3. Storage
+  echo "Ensuring provider-agnostic StorageClass contract (ech-rwo)..."
+  ensure_storage_class
+
+  # 4. cert-manager
   echo "Installing cert-manager..."
   helm upgrade --install cert-manager jetstack/cert-manager \
     --namespace cert-manager --create-namespace \
     --set crds.enabled=true \
     --wait
 
-  # 4. Flux
+  # 5. Flux
   echo "Installing Flux..."
   helm upgrade --install flux2 fluxcd-community/flux2 \
     --namespace flux-system --create-namespace \
@@ -28,7 +70,7 @@ run_install() {
   echo "Allowing ech-board manager namespace access to source-controller artifacts..."
   kubectl apply -f "$(ecli_assets_dir)/source_controller_allow_ech_board.yaml"
 
-  # 5. External Secrets Operator + ClusterSecretStore
+  # 6. External Secrets Operator + ClusterSecretStore
   echo "Installing External Secrets Operator..."
   helm upgrade --install external-secrets external-secrets/external-secrets \
     --namespace external-secrets --create-namespace \
@@ -54,16 +96,16 @@ run_install() {
       ;;
   esac
 
-  # 6. IngressGroup CRD
+  # 7. IngressGroup CRD
   echo "Installing IngressGroup CRD..."
   kubectl apply -f "$(ecli_assets_dir)/ingress_group_crd.yaml"
 
-  # 7. Traefik CRDs + shared RBAC
+  # 8. Traefik CRDs + shared RBAC
   echo "Installing Traefik CRDs and shared RBAC..."
   kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.4/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
   kubectl apply -f "$(ecli_assets_dir)/traefik_clusterrole.yaml"
 
-  # 8. Group ingress manager (Traefik + IP certificates per group)
+  # 9. Group ingress manager (Traefik + IP certificates per group)
   echo "Deploying group ingress manager..."
   kubectl create namespace ingress-system --dry-run=client -o yaml | kubectl apply -f -
   kubectl apply -f "$(ecli_assets_dir)/group_ingress_manager.yaml"
@@ -74,7 +116,7 @@ run_install() {
     --from-file=sync.sh="$(ecli_root_dir)/assets/scripts/group_ingress_manager.sh" \
     --dry-run=client -o yaml | kubectl apply -f -
 
-  # 8. GitOps repo
+  # 10. GitOps repo
   echo "Configuring Flux to watch $GITOPS_REPO..."
   local gitops_url
   local gitops_host
@@ -108,6 +150,7 @@ run_install() {
 
   echo ""
   echo "=== Cluster add-ons ready ==="
+  echo "StorageClass contract: ech-rwo"
 }
 
 gitops_repo_ssh_url() {
