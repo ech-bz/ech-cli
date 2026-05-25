@@ -121,32 +121,37 @@ run_install() {
   local gitops_url
   local gitops_host
   local gitops_port
-  local keyfile
   gitops_url=$(gitops_repo_ssh_url "$GITOPS_REPO")
   gitops_host=$(gitops_repo_ssh_host "$GITOPS_REPO")
   gitops_port=$(gitops_repo_ssh_port "$GITOPS_REPO")
-  keyfile=$(mktemp -u)
-  ssh-keygen -t ed25519 -f "$keyfile" -N "" -q
-  if [ "$gitops_port" = "22" ]; then
-    known_hosts=$(ssh-keyscan "$gitops_host" 2>/dev/null)
+  if kubectl -n flux-system get secret gitops-deploy-key >/dev/null 2>&1; then
+    echo "Reusing existing flux-system/gitops-deploy-key"
   else
-    known_hosts=$(ssh-keyscan -p "$gitops_port" "$gitops_host" 2>/dev/null)
+    local keyfile
+    local known_hosts
+    keyfile=$(mktemp -u)
+    ssh-keygen -t ed25519 -f "$keyfile" -N "" -q
+    if [ "$gitops_port" = "22" ]; then
+      known_hosts=$(ssh-keyscan "$gitops_host" 2>/dev/null)
+    else
+      known_hosts=$(ssh-keyscan -p "$gitops_port" "$gitops_host" 2>/dev/null)
+    fi
+    if [ -z "$known_hosts" ]; then
+      echo "ERROR: could not fetch SSH host key for $gitops_host:$gitops_port" >&2
+      exit 1
+    fi
+    kubectl create secret generic gitops-deploy-key -n flux-system \
+      --from-file=identity="$keyfile" \
+      --from-file=identity.pub="${keyfile}.pub" \
+      --from-literal=known_hosts="$known_hosts" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    echo ""
+    echo "=== Add this deploy key to your git repo (read-only) ==="
+    cat "${keyfile}.pub"
+    echo ""
+    rm -f "$keyfile" "${keyfile}.pub"
   fi
-  if [ -z "$known_hosts" ]; then
-    echo "ERROR: could not fetch SSH host key for $gitops_host:$gitops_port" >&2
-    exit 1
-  fi
-  kubectl create secret generic gitops-deploy-key -n flux-system \
-    --from-file=identity="$keyfile" \
-    --from-file=identity.pub="${keyfile}.pub" \
-    --from-literal=known_hosts="$known_hosts" \
-    --dry-run=client -o yaml | kubectl apply -f -
   SSH_URL="$gitops_url" GITOPS_PATH="$GITOPS_PATH" envsubst < "$(ecli_assets_dir)/gitops_source.yaml" | kubectl apply -f -
-  echo ""
-  echo "=== Add this deploy key to your git repo (read-only) ==="
-  cat "${keyfile}.pub"
-  echo ""
-  rm -f "$keyfile" "${keyfile}.pub"
 
   echo ""
   echo "=== Cluster add-ons ready ==="
