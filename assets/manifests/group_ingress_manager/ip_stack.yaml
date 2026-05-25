@@ -77,11 +77,11 @@ spec:
             - --entryPoints.websecure.address=:443
             - --providers.kubernetesingress
             - --providers.kubernetesingress.ingressclass=${CLASS}
-            - --providers.kubernetesingress.namespaces=${GROUP_NS},${IP_NS}
+            - --providers.kubernetesingress.namespaces=${WATCH_NAMESPACES}
             - --providers.kubernetescrd
             - --providers.kubernetescrd.ingressclass=${CLASS}
             - --providers.kubernetescrd.allowcrossnamespace=true
-            - --providers.kubernetescrd.namespaces=${GROUP_NS},${IP_NS}
+            - --providers.kubernetescrd.namespaces=${WATCH_NAMESPACES}
           ports:
             - name: web
               containerPort: 80

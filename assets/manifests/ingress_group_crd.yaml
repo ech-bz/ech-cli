@@ -40,6 +40,9 @@ spec:
                         description: Traefik PathPrefix match.
                       serviceName:
                         type: string
+                      serviceNamespace:
+                        type: string
+                        description: Backend service namespace. Defaults to the IngressGroup namespace when omitted.
                       servicePort:
                         type: integer
                         minimum: 1

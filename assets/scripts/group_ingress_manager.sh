@@ -58,13 +58,11 @@ apply_template() {
 }
 
 is_valid_group() {
-  GROUP="$1"
-  echo "$GROUP" | grep -Eq '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' && [ "${#GROUP}" -le 63 ]
+  echo "$1" | grep -Eq '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' && [ "${#1}" -le 63 ]
 }
 
 is_valid_domain() {
-  DOMAIN="$1"
-  echo "$DOMAIN" | grep -Eq '^([a-z0-9]([a-z0-9-]*[a-z0-9])?)(\.([a-z0-9]([a-z0-9-]*[a-z0-9])?))*$' && [ "${#DOMAIN}" -le 253 ]
+  echo "$1" | grep -Eq '^([a-z0-9]([a-z0-9-]*[a-z0-9])?)(\.([a-z0-9]([a-z0-9-]*[a-z0-9])?))*$' && [ "${#1}" -le 253 ]
 }
 
 stable_hash() {
@@ -111,7 +109,7 @@ ingressgroup_domains() {
 ingressgroup_routes() {
   GROUP="$1"
   GROUP_NS="$2"
-  kubectl get ingressgroup "$GROUP" -n "$GROUP_NS" -o jsonpath='{range .spec.routes[*]}{.pathPrefix}{"|"}{.serviceName}{"|"}{.servicePort}{"\n"}{end}' \
+  kubectl get ingressgroup "$GROUP" -n "$GROUP_NS" -o jsonpath='{range .spec.routes[*]}{.pathPrefix}{"|"}{.serviceName}{"|"}{.serviceNamespace}{"|"}{.servicePort}{"\n"}{end}' \
     | awk 'NF>0'
 }
 
@@ -133,6 +131,7 @@ ensure_ip_stack() {
   GROUP_NS="$2"
   NODE_NAME="$3"
   NODE_IP="$4"
+  WATCH_NAMESPACES="$5"
   IP_NS="$(node_ip_namespace "$GROUP" "$NODE_NAME")"
   CLASS="$(group_class "$GROUP")"
   IP_HASH="$(stable_hash "$NODE_NAME")"
@@ -141,7 +140,28 @@ ensure_ip_stack() {
 
   ensure_namespace "$IP_NS"
   apply_template ip_stack.yaml \
-    GROUP="$GROUP" GROUP_NS="$GROUP_NS" IP_NS="$IP_NS" NODE_NAME="$NODE_NAME" NODE_IP="$NODE_IP" CLASS="$CLASS" IP_HASH="$IP_HASH" DEFAULT_CERT_SECRET="$DEFAULT_CERT_SECRET"
+    GROUP="$GROUP" GROUP_NS="$GROUP_NS" IP_NS="$IP_NS" NODE_NAME="$NODE_NAME" NODE_IP="$NODE_IP" CLASS="$CLASS" IP_HASH="$IP_HASH" DEFAULT_CERT_SECRET="$DEFAULT_CERT_SECRET" WATCH_NAMESPACES="$WATCH_NAMESPACES"
+}
+
+route_watch_namespaces() {
+  GROUP_NS="$1"
+  IP_NS="$2"
+  PATH_ROUTES_FILE="$3"
+
+  WATCH_FILE="$(mktemp)"
+  printf '%s\n%s\n' "$GROUP_NS" "$IP_NS" > "$WATCH_FILE"
+
+  while IFS='|' read -r _ _ SERVICE_NAMESPACE _; do
+    if [ -z "$SERVICE_NAMESPACE" ] || [ "$SERVICE_NAMESPACE" = "<no value>" ]; then
+      SERVICE_NAMESPACE="$GROUP_NS"
+    fi
+    if is_valid_group "$SERVICE_NAMESPACE"; then
+      printf '%s\n' "$SERVICE_NAMESPACE" >> "$WATCH_FILE"
+    fi
+  done < "$PATH_ROUTES_FILE"
+
+  sort -u "$WATCH_FILE" | awk 'NR==1{printf "%s", $0; next} {printf ",%s", $0} END{print ""}'
+  rm -f "$WATCH_FILE"
 }
 
 sync_domain_plane() {
@@ -176,10 +196,17 @@ sync_domain_plane() {
       GROUP="$GROUP" GROUP_NS="$GROUP_NS" DOMAIN="$DOMAIN" DOMAIN_NAME="$DOMAIN_NAME" DOMAIN_SECRET="$DOMAIN_SECRET" ISSUER_NAME="$ISSUER_NAME" ISSUER_KIND="ClusterIssuer"
   done < "$DOMAINS_FILE"
 
-  while IFS='|' read -r PATH_PREFIX SERVICE_NAME SERVICE_PORT; do
+  while IFS='|' read -r PATH_PREFIX SERVICE_NAME SERVICE_NAMESPACE SERVICE_PORT; do
     [ -z "$PATH_PREFIX" ] && continue
     if ! printf '%s' "$PATH_PREFIX" | grep -Eq '^/'; then
       echo "Skipping invalid pathPrefix in $GROUP: $PATH_PREFIX" >&2
+      continue
+    fi
+    if [ -z "$SERVICE_NAMESPACE" ] || [ "$SERVICE_NAMESPACE" = "<no value>" ]; then
+      SERVICE_NAMESPACE="$GROUP_NS"
+    fi
+    if ! is_valid_group "$SERVICE_NAMESPACE"; then
+      echo "Skipping invalid serviceNamespace in $GROUP: $SERVICE_NAMESPACE" >&2
       continue
     fi
     case "$SERVICE_PORT" in
@@ -196,10 +223,10 @@ sync_domain_plane() {
       [ -z "$DOMAIN" ] && continue
       DOMAIN_NAME="$(domain_resource_name "$DOMAIN")"
       DOMAIN_SECRET="${DOMAIN_NAME}-tls"
-      ROUTE_NAME="$(route_resource_name "$GROUP|$DOMAIN|$PATH_PREFIX|$SERVICE_NAME|$SERVICE_PORT")"
+      ROUTE_NAME="$(route_resource_name "$GROUP|$DOMAIN|$PATH_PREFIX|$SERVICE_NAMESPACE|$SERVICE_NAME|$SERVICE_PORT")"
       printf '%s\n' "$ROUTE_NAME" >> "$ROUTE_NAMES_FILE"
       apply_template dns_route.yaml \
-        GROUP="$GROUP" GROUP_NS="$GROUP_NS" CLASS="$CLASS" DOMAIN="$DOMAIN" DOMAIN_SECRET="$DOMAIN_SECRET" PATH_PREFIX="$PATH_PREFIX" PATH_PREFIX_HASH="$PATH_PREFIX_HASH" SERVICE_NAME="$SERVICE_NAME" SERVICE_NAMESPACE="$GROUP_NS" SERVICE_PORT="$SERVICE_PORT" ROUTE_NAME="$ROUTE_NAME" ROUTE_PRIORITY="$ROUTE_PRIORITY"
+        GROUP="$GROUP" GROUP_NS="$GROUP_NS" CLASS="$CLASS" DOMAIN="$DOMAIN" DOMAIN_SECRET="$DOMAIN_SECRET" PATH_PREFIX="$PATH_PREFIX" PATH_PREFIX_HASH="$PATH_PREFIX_HASH" SERVICE_NAME="$SERVICE_NAME" SERVICE_NAMESPACE="$SERVICE_NAMESPACE" SERVICE_PORT="$SERVICE_PORT" ROUTE_NAME="$ROUTE_NAME" ROUTE_PRIORITY="$ROUTE_PRIORITY"
     done < "$DOMAINS_FILE"
   done < "$PATH_ROUTES_FILE"
 
@@ -239,18 +266,29 @@ sync_ip_plane() {
   while IFS='|' read -r NODE_NAME NODE_IP; do
     [ -z "$NODE_NAME" ] && continue
     IP_NS="$(node_ip_namespace "$GROUP" "$NODE_NAME")"
+    WATCH_NAMESPACES="$(route_watch_namespaces "$GROUP_NS" "$IP_NS" "$PATH_ROUTES_FILE")"
+    if [ -z "$WATCH_NAMESPACES" ]; then
+      WATCH_NAMESPACES="$GROUP_NS,$IP_NS"
+    fi
     printf '%s\n' "$IP_NS" >> "$IP_NAMESPACES_FILE"
     CERT_NAME="node-$(printf '%s' "$NODE_IP" | tr '.' '-' | tr ':' '-')"
     DEFAULT_CERT_SECRET="${CERT_NAME}-tls"
-    ensure_ip_stack "$GROUP" "$GROUP_NS" "$NODE_NAME" "$NODE_IP"
+    ensure_ip_stack "$GROUP" "$GROUP_NS" "$NODE_NAME" "$NODE_IP" "$WATCH_NAMESPACES"
 
     apply_template ip_certificate.yaml \
       GROUP="$GROUP" GROUP_NS="$GROUP_NS" IP_NS="$IP_NS" NODE_NAME="$NODE_NAME" NODE_IP="$NODE_IP" CERT_NAME="$CERT_NAME" ISSUER_NAME="$ISSUER_NAME" ISSUER_KIND="ClusterIssuer"
 
-    while IFS='|' read -r PATH_PREFIX SERVICE_NAME SERVICE_PORT; do
+    while IFS='|' read -r PATH_PREFIX SERVICE_NAME SERVICE_NAMESPACE SERVICE_PORT; do
       [ -z "$PATH_PREFIX" ] && continue
       if ! printf '%s' "$PATH_PREFIX" | grep -Eq '^/'; then
         echo "Skipping invalid pathPrefix in $GROUP: $PATH_PREFIX" >&2
+        continue
+      fi
+      if [ -z "$SERVICE_NAMESPACE" ] || [ "$SERVICE_NAMESPACE" = "<no value>" ]; then
+        SERVICE_NAMESPACE="$GROUP_NS"
+      fi
+      if ! is_valid_group "$SERVICE_NAMESPACE"; then
+        echo "Skipping invalid serviceNamespace in $GROUP: $SERVICE_NAMESPACE" >&2
         continue
       fi
       case "$SERVICE_PORT" in
@@ -262,11 +300,11 @@ sync_ip_plane() {
 
       ROUTE_PRIORITY="$(route_priority "$PATH_PREFIX")"
       PATH_PREFIX_HASH="$(path_prefix_hash "$PATH_PREFIX")"
-      ROUTE_NAME="$(route_resource_name "$GROUP|$NODE_NAME|$PATH_PREFIX|$SERVICE_NAME|$SERVICE_PORT")"
+      ROUTE_NAME="$(route_resource_name "$GROUP|$NODE_NAME|$PATH_PREFIX|$SERVICE_NAMESPACE|$SERVICE_NAME|$SERVICE_PORT")"
       printf '%s\n' "$ROUTE_NAME" >> "$ROUTE_NAMES_FILE"
 
       apply_template ip_route.yaml \
-        GROUP="$GROUP" GROUP_NS="$GROUP_NS" IP_NS="$IP_NS" NODE_NAME="$NODE_NAME" NODE_IP="$NODE_IP" CLASS="$CLASS" PATH_PREFIX="$PATH_PREFIX" PATH_PREFIX_HASH="$PATH_PREFIX_HASH" SERVICE_NAME="$SERVICE_NAME" SERVICE_NAMESPACE="$GROUP_NS" SERVICE_PORT="$SERVICE_PORT" ROUTE_NAME="$ROUTE_NAME" ROUTE_PRIORITY="$ROUTE_PRIORITY"
+        GROUP="$GROUP" GROUP_NS="$GROUP_NS" IP_NS="$IP_NS" NODE_NAME="$NODE_NAME" NODE_IP="$NODE_IP" CLASS="$CLASS" PATH_PREFIX="$PATH_PREFIX" PATH_PREFIX_HASH="$PATH_PREFIX_HASH" SERVICE_NAME="$SERVICE_NAME" SERVICE_NAMESPACE="$SERVICE_NAMESPACE" SERVICE_PORT="$SERVICE_PORT" ROUTE_NAME="$ROUTE_NAME" ROUTE_PRIORITY="$ROUTE_PRIORITY"
     done < "$PATH_ROUTES_FILE"
 
     apply_template ip_tlsstore.yaml GROUP="$GROUP" GROUP_NS="$GROUP_NS" IP_NS="$IP_NS" DEFAULT_CERT_SECRET="$DEFAULT_CERT_SECRET"
