@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${RUNNER_POD}
+  labels:
+    app.kubernetes.io/name: ecli-genesis-runner
+spec:
+  restartPolicy: Never
+  initContainers:
+    - name: genesis
+      image: ${SUI_TOOLS_IMAGE}
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/bash", "/bootstrap/generate-genesis-network.sh"]
+      env:
+        - name: VALIDATORS
+          value: "${VALIDATORS}"
+        - name: EPOCH_DURATION_MS
+          value: "${EPOCH_DURATION_MS}"
+        - name: GENESIS_GAS_AMOUNT
+          value: "${GENESIS_GAS_AMOUNT}"
+        - name: VALIDATOR_STAKE
+          value: "${VALIDATOR_STAKE}"
+        - name: SPONSOR_GAS_OBJECT_COUNT
+          value: "${SPONSOR_GAS_OBJECT_COUNT}"
+        - name: NAMESPACE
+          value: "${NAMESPACE}"
+        - name: VALIDATOR_P2P_PORT
+          value: "${VALIDATOR_P2P_PORT}"
+        - name: SUI_CONFIG_DIR
+          value: /tmp/sui
+      volumeMounts:
+        - name: bootstrap-scripts
+          mountPath: /bootstrap
+          readOnly: true
+        - name: work
+          mountPath: /work
+  containers:
+    - name: artifacts
+      image: ${GENESIS_RUNNER_IDLE_IMAGE}
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/sh", "-c", "sleep 86400"]
+      volumeMounts:
+        - name: work
+          mountPath: /work
+  volumes:
+    - name: bootstrap-scripts
+      configMap:
+        name: ${RUNNER_CM}
+        defaultMode: 0555
+    - name: work
+      emptyDir: {}

@@ -30,3 +30,21 @@ sudo ./ecli uninstall
 sudo ./ecli join-node --url https://1.2.3.4:6443 --token <token>
 sudo ./ecli join-node --url https://1.2.3.4:6443 --token <token> --group echbz
 ```
+
+## bootstrap-network
+
+Run this on the master node or any machine that already has working `kubectl` access to the cluster:
+
+```bash
+sudo ./ecli bootstrap-network \
+  --namespace echbz \
+  --validators 4 \
+  --epoch-duration-ms 60000 \
+  --genesis-gas-amount 9500000000000000 \
+  --validator-stake 1000000000 \
+  --sponsor-gas-object-count 256 \
+  --validator-p2p-port 2001 \
+  --output-dir /path/to/ech-gitops/generated
+```
+
+This generates `genesis.blob` and `seed-peers.yaml` in the output directory and creates ESO `PushSecret` resources in the `cluster-secrets` namespace so the validator and relay sponsor secrets are pushed into the configured `backend` store.

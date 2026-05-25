@@ -39,6 +39,7 @@ run_install() {
   echo "Installing External Secrets Operator..."
   helm upgrade --install external-secrets external-secrets/external-secrets \
     --namespace external-secrets --create-namespace \
+    --set installCRDs=true \
     --wait
 
   echo "Creating ClusterSecretStore..."

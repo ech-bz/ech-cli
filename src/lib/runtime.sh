@@ -12,3 +12,24 @@ ecli_root_dir() {
 ecli_assets_dir() {
   printf '%s\n' "$(ecli_root_dir)/assets/manifests"
 }
+
+validate_dns1123_label() {
+  local value="$1"
+  local label="$2"
+
+  if ! [[ "$value" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || [[ ${#value} -gt 63 ]]; then
+    echo "ERROR: $label must be a valid DNS-1123 label (lowercase letters, digits, '-') and <= 63 chars" >&2
+    exit 1
+  fi
+}
+
+ensure_kubectl_access() {
+  if [[ -z "${KUBECONFIG:-}" && -f /etc/rancher/k3s/k3s.yaml ]]; then
+    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  fi
+
+  if ! kubectl cluster-info >/dev/null 2>&1; then
+    echo "ERROR: kubectl cannot reach a Kubernetes cluster. Set KUBECONFIG or current context first." >&2
+    exit 1
+  fi
+}
