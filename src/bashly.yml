@@ -30,6 +30,44 @@ commands:
     arg: key
     help: AWS secret access key (required if backend=aws)
 
+- name: bootstrap-network
+  help: Generate genesis artifacts and push network secrets to the cluster
+  flags:
+  - long: --namespace
+    short: -n
+    arg: namespace
+    help: "Target network namespace (for example echbz)"
+    required: true
+  - long: --validators
+    arg: count
+    help: "Number of validator replicas"
+    required: true
+  - long: --epoch-duration-ms
+    arg: ms
+    help: Genesis epoch duration in milliseconds
+    required: true
+  - long: --genesis-gas-amount
+    arg: amount
+    help: Gas amount per sponsor object in genesis
+    required: true
+  - long: --validator-stake
+    arg: amount
+    help: Stake amount for each validator in genesis
+    required: true
+  - long: --sponsor-gas-object-count
+    arg: count
+    help: Number of gas objects for the relay sponsor
+    required: true
+  - long: --validator-p2p-port
+    arg: port
+    help: Validator P2P port used in genesis
+    required: true
+  - long: --output-dir
+    short: -o
+    arg: path
+    help: "Directory where genesis.blob and seed-peers.yaml will be written"
+    default: ./generated
+
 - name: uninstall
   help: Remove cluster infrastructure installed by ecli from the current cluster
 
