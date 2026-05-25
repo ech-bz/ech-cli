@@ -1,12 +1,5 @@
 run_uninstall() {
-  if [[ -z "${KUBECONFIG:-}" && -f /etc/rancher/k3s/k3s.yaml ]]; then
-    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-  fi
-
-  if ! kubectl cluster-info >/dev/null 2>&1; then
-    echo "ERROR: kubectl cannot reach a Kubernetes cluster. Set KUBECONFIG or current context first." >&2
-    exit 1
-  fi
+  ensure_kubectl_access
 
   echo "Removing GitOps wiring..."
   kubectl delete -f "$(ecli_assets_dir)/gitops_source.yaml" --ignore-not-found

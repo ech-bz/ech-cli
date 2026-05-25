@@ -3,10 +3,7 @@ run_join_node() {
   NAME_PREFIX="worker"
 
   if [[ -n "$NODE_GROUP" ]]; then
-    if ! [[ "$NODE_GROUP" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || [[ ${#NODE_GROUP} -gt 63 ]]; then
-      echo "ERROR: --group must be a valid DNS-1123 label (lowercase letters, digits, '-') and <= 63 chars" >&2
-      exit 1
-    fi
+    validate_dns1123_label "$NODE_GROUP" "--group"
 
     echo "Obtaining public IP..."
     IP=$(curl -s https://checkip.amazonaws.com/)
