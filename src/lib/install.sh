@@ -11,28 +11,13 @@ ensure_storage_class() {
     return
   fi
 
-  echo "StorageClass ${desired_storage_class} not found. Installing Longhorn..."
-  helm upgrade --install longhorn longhorn/longhorn \
-    --namespace longhorn-system --create-namespace \
-    --wait --timeout 20m
+  echo "Creating StorageClass ${desired_storage_class} backed by local-path..."
+  kubectl apply -f "$(ecli_assets_dir)/storage_class_local_path.yaml"
 
-  echo "Waiting for Longhorn components..."
-  kubectl -n longhorn-system rollout status daemonset/longhorn-manager --timeout=10m
-  kubectl -n longhorn-system rollout status deployment/longhorn-driver-deployer --timeout=10m
-  kubectl -n longhorn-system rollout status deployment/longhorn-ui --timeout=10m
-
-  if storage_class_exists "$desired_storage_class"; then
-    echo "StorageClass ${desired_storage_class} is available."
-    return
-  fi
-
-  if ! storage_class_exists longhorn; then
-    echo "ERROR: Longhorn installed but StorageClass 'longhorn' was not created" >&2
+  if ! storage_class_exists "$desired_storage_class"; then
+    echo "ERROR: failed to create StorageClass ${desired_storage_class}" >&2
     exit 1
   fi
-
-  echo "Creating StorageClass ${desired_storage_class} backed by Longhorn..."
-  kubectl apply -f "$(ecli_assets_dir)/storage_class_longhorn.yaml"
 }
 
 run_install() {
@@ -46,11 +31,10 @@ run_install() {
   helm repo add --force-update jetstack https://charts.jetstack.io
   helm repo add --force-update fluxcd-community https://fluxcd-community.github.io/helm-charts
   helm repo add --force-update external-secrets https://charts.external-secrets.io
-  helm repo add --force-update longhorn https://charts.longhorn.io
   helm repo update
 
-  # 3. Storage
-  echo "Ensuring provider-agnostic StorageClass contract (ech-rwo)..."
+  # 3. Storage class
+  echo "Ensuring provider-agnostic StorageClass contract (ech-rwo) on local-path..."
   ensure_storage_class
 
   # 4. cert-manager
