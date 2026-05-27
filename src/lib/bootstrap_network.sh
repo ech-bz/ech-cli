@@ -117,6 +117,7 @@ run_bootstrap_network() {
   echo "  validators:         ${validators}"
   echo "  output-dir:         ${output_dir}"
   echo "  sui-tools image:    ${SUI_TOOLS_IMAGE}"
+  echo "  runner node arch:   amd64"
   echo "  runner namespace:   ${CLUSTER_SECRETS_NAMESPACE}"
 
   work_dir="$(mktemp -d)"
