@@ -68,6 +68,11 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       nodeSelector:
         kubernetes.io/hostname: "${NODE_NAME}"
+      tolerations:
+        - key: ech.bz/ingress-only
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
       serviceAccountName: traefik-ip
       containers:
         - name: traefik

@@ -126,6 +126,12 @@ ensure_namespace() {
   fi
 }
 
+ensure_ingress_only_taint() {
+  NODE_NAME="$1"
+  # Block regular workloads on ingress nodes; only pods with explicit toleration may schedule.
+  kubectl taint node "$NODE_NAME" ech.bz/ingress-only=true:NoSchedule --overwrite >/dev/null
+}
+
 ensure_ip_stack() {
   GROUP="$1"
   GROUP_NS="$2"
@@ -265,6 +271,7 @@ sync_ip_plane() {
 
   while IFS='|' read -r NODE_NAME NODE_IP; do
     [ -z "$NODE_NAME" ] && continue
+    ensure_ingress_only_taint "$NODE_NAME"
     IP_NS="$(node_ip_namespace "$GROUP" "$NODE_NAME")"
     WATCH_NAMESPACES="$(route_watch_namespaces "$GROUP_NS" "$IP_NS" "$PATH_ROUTES_FILE")"
     if [ -z "$WATCH_NAMESPACES" ]; then
