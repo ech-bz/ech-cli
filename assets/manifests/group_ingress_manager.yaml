@@ -15,7 +15,10 @@ metadata:
   name: group-ingress-manager
 rules:
 - apiGroups: [""]
-  resources: ["nodes", "namespaces"]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+- apiGroups: [""]
+  resources: ["namespaces"]
   verbs: ["get", "list", "watch", "create", "delete"]
 - apiGroups: [""]
   resources: ["serviceaccounts", "secrets"]

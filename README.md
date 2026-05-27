@@ -10,8 +10,11 @@ chmod +x ./ecli
 ## install
 
 ```bash
-sudo ./ecli install --gitops-repo git@github.com:org/gitops-repo
 sudo ./ecli install --gitops-repo git@github.com:org/gitops-repo \
+  --tailscale-auth-key <tskey-auth-...>
+sudo ./ecli install --gitops-repo git@github.com:org/gitops-repo \
+  --tailscale-auth-key <tskey-auth-...> \
+  --pod-cidr 10.42.0.0/16 \
   --secret-backend aws \
   --aws-region eu-central-1 \
   --aws-access-key-id AKIA... \
@@ -27,8 +30,10 @@ sudo ./ecli uninstall
 ## join-node
 
 ```bash
-sudo ./ecli join-node --url https://1.2.3.4:6443 --token <token>
-sudo ./ecli join-node --url https://1.2.3.4:6443 --token <token> --group echbz
+sudo ./ecli join-node --url https://1.2.3.4:6443 --token <token> \
+  --tailscale-auth-key <tskey-auth-...>
+sudo ./ecli join-node --url https://1.2.3.4:6443 --token <token> --group echbz \
+  --tailscale-auth-key <tskey-auth-...>
 ```
 
 ## bootstrap-network

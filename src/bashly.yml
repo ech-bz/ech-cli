@@ -29,6 +29,15 @@ commands:
   - long: --aws-secret-access-key
     arg: key
     help: AWS secret access key (required if backend=aws)
+  - long: --tailscale-auth-key
+    short: -a
+    arg: key
+    help: Tailscale auth key used for non-interactive node registration
+    required: true
+  - long: --pod-cidr
+    arg: cidr
+    help: Pod CIDR used by CNI native routing mode
+    default: 10.42.0.0/16
 
 - name: bootstrap-network
   help: Generate genesis artifacts and push network secrets to the cluster
@@ -87,4 +96,9 @@ commands:
   - long: --group
     short: -g
     arg: name
-    help: Ingress node group (DNS-1123 label; sets `ech.bz/ingress-group` and node-external-ip)
+    help: Ingress node group (DNS-1123 label; sets `ech.bz/ingress-group` and `ech.bz/public-ip`)
+  - long: --tailscale-auth-key
+    short: -a
+    arg: key
+    help: Tailscale auth key used for non-interactive tailscale up
+    required: true

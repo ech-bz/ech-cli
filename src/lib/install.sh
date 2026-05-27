@@ -21,30 +21,75 @@ ensure_storage_class() {
 }
 
 run_install() {
+  local pod_cidr
+  local tailscale_ipv4
+  local k3s_join_url
+  local k3s_node_token
+
+  pod_cidr="${POD_CIDR:?POD_CIDR is required}"
+
+  # 1. K3s server with native Tailscale VPN integration
+  if systemctl is-active --quiet k3s; then
+    echo "K3s is already running, skipping installation..."
+  else
+    echo "Installing Tailscale..."
+    install_tailscale
+
+    echo "Installing K3s server with Tailscale VPN integration..."
+    local k3s_exec="server"
+    k3s_exec+=" --cluster-cidr=${pod_cidr}"
+    k3s_exec+=" --disable=traefik,servicelb"
+    k3s_exec+=" --vpn-auth=name=tailscale,joinKey=${TAILSCALE_AUTH_KEY}"
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="${k3s_exec}" sh -
+
+    echo "Waiting for K3s to be ready..."
+    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+    local retries=0
+    until kubectl get nodes >/dev/null 2>&1; do
+      retries=$((retries + 1))
+      if [[ $retries -ge 60 ]]; then
+        echo "ERROR: K3s did not become ready within 120 seconds" >&2
+        exit 1
+      fi
+      sleep 2
+    done
+
+    echo "Waiting for node to be Ready..."
+    kubectl wait --for=condition=Ready node --all --timeout=120s
+  fi
+
   ensure_kubectl_access
 
-  # 1. Helm
+  tailscale_ipv4="$(get_tailscale_ip)"
+  k3s_join_url="https://${tailscale_ipv4}:6443"
+  k3s_node_token="$(cat /var/lib/rancher/k3s/server/node-token)"
+  if [[ -z "$k3s_node_token" ]]; then
+    echo "ERROR: failed to read K3s node token from /var/lib/rancher/k3s/server/node-token" >&2
+    exit 1
+  fi
+
+  # 2. Helm
   echo "Installing helm..."
   curl -sfL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-  # 2. Helm repos
+  # 3. Helm repos
   helm repo add --force-update jetstack https://charts.jetstack.io
   helm repo add --force-update fluxcd-community https://fluxcd-community.github.io/helm-charts
   helm repo add --force-update external-secrets https://charts.external-secrets.io
   helm repo update
 
-  # 3. Storage class
+  # 4. Storage class
   echo "Ensuring provider-agnostic StorageClass contract (ech-rwo) on local-path..."
   ensure_storage_class
 
-  # 4. cert-manager
+  # 5. cert-manager
   echo "Installing cert-manager..."
   helm upgrade --install cert-manager jetstack/cert-manager \
     --namespace cert-manager --create-namespace \
     --set crds.enabled=true \
     --wait
 
-  # 5. Flux
+  # 6. Flux
   echo "Installing Flux..."
   helm upgrade --install flux2 fluxcd-community/flux2 \
     --namespace flux-system --create-namespace \
@@ -54,7 +99,7 @@ run_install() {
   echo "Allowing ech-board manager namespace access to source-controller artifacts..."
   kubectl apply -f "$(ecli_assets_dir)/source_controller_allow_ech_board.yaml"
 
-  # 6. External Secrets Operator + ClusterSecretStore
+  # 7. External Secrets Operator + ClusterSecretStore
   echo "Installing External Secrets Operator..."
   helm upgrade --install external-secrets external-secrets/external-secrets \
     --namespace external-secrets --create-namespace \
@@ -80,16 +125,19 @@ run_install() {
       ;;
   esac
 
-  # 7. IngressGroup CRD
+  # 8. IngressGroup CRD
   echo "Installing IngressGroup CRD..."
   kubectl apply -f "$(ecli_assets_dir)/ingress_group_crd.yaml"
 
-  # 8. Traefik CRDs + shared RBAC
+  # 9. Traefik CRDs + shared RBAC
   echo "Installing Traefik CRDs and shared RBAC..."
   kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.4/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
   kubectl apply -f "$(ecli_assets_dir)/traefik_clusterrole.yaml"
 
-  # 9. Group ingress manager (Traefik + IP certificates per group)
+  echo "Installing default ClusterIssuer for ingress group 'cluster'..."
+  kubectl apply -f "$(ecli_assets_dir)/cluster_issuer_cluster.yaml"
+
+  # 10. Group ingress manager (Traefik + IP certificates per group)
   echo "Deploying group ingress manager..."
   kubectl create namespace ingress-system --dry-run=client -o yaml | kubectl apply -f -
   kubectl apply -f "$(ecli_assets_dir)/group_ingress_manager.yaml"
@@ -100,7 +148,7 @@ run_install() {
     --from-file=sync.sh="$(ecli_root_dir)/assets/scripts/group_ingress_manager.sh" \
     --dry-run=client -o yaml | kubectl apply -f -
 
-  # 10. GitOps repo
+  # 11. GitOps repo
   echo "Configuring Flux to watch $GITOPS_REPO..."
   local gitops_url
   local gitops_host
@@ -138,8 +186,9 @@ run_install() {
   SSH_URL="$gitops_url" GITOPS_PATH="$GITOPS_PATH" envsubst < "$(ecli_assets_dir)/gitops_source.yaml" | kubectl apply -f -
 
   echo ""
-  echo "=== Cluster add-ons ready ==="
-  echo "StorageClass contract: ech-rwo"
+  echo "=== Cluster is ready ==="
+  echo "Join example:"
+  echo "  sudo ./ecli join-node --url ${k3s_join_url} --token ${k3s_node_token} --tailscale-auth-key ${TAILSCALE_AUTH_KEY}"
 }
 
 gitops_repo_ssh_url() {

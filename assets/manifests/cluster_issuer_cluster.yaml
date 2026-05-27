@@ -1,0 +1,15 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: cluster
+spec:
+  acme:
+    email: noreply@nonexistent.com
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: cluster-account-key
+    profile: shortlived
+    solvers:
+      - http01:
+          ingress:
+            class: traefik-cluster

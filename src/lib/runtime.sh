@@ -33,3 +33,32 @@ ensure_kubectl_access() {
     exit 1
   fi
 }
+
+get_public_ip() {
+  curl -fsS --max-time 5 https://checkip.amazonaws.com
+}
+
+install_tailscale() {
+  if command -v tailscale >/dev/null 2>&1 && command -v tailscaled >/dev/null 2>&1; then
+    systemctl enable --now tailscaled 2>/dev/null || true
+    return
+  fi
+
+  echo "Installing Tailscale..."
+  curl -fsSL https://tailscale.com/install.sh | sh
+  systemctl enable --now tailscaled
+}
+
+get_tailscale_ip() {
+  local tailscale_ipv4
+
+  tailscale_ipv4="$(tailscale ip -4)"
+
+  if [[ -z "$tailscale_ipv4" || "$tailscale_ipv4" == *$'\n'* ]]; then
+    echo "ERROR: tailscale ip -4 must return exactly one IPv4 address" >&2
+    printf '%s\n' "$tailscale_ipv4" >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$tailscale_ipv4"
+}

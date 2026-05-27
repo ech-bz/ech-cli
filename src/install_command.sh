@@ -4,6 +4,8 @@ export SECRET_BACKEND="${args[--secret-backend]}"
 export AWS_REGION="${args[--aws-region]}"
 export AWS_ACCESS_KEY_ID="${args[--aws-access-key-id]}"
 export AWS_SECRET_ACCESS_KEY="${args[--aws-secret-access-key]}"
+export TAILSCALE_AUTH_KEY="${args[--tailscale-auth-key]}"
+export POD_CIDR="${args[--pod-cidr]}"
 
 if [[ "$SECRET_BACKEND" == "aws" ]]; then
   [[ -z "$AWS_REGION" ]] && { echo "--aws-region is required when --secret-backend=aws" >&2; exit 1; }

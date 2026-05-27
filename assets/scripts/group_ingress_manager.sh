@@ -132,6 +132,11 @@ ensure_ingress_only_taint() {
   kubectl taint node "$NODE_NAME" ech.bz/ingress-only=true:NoSchedule --overwrite >/dev/null
 }
 
+node_is_control_plane() {
+  NODE_NAME="$1"
+  kubectl get node "$NODE_NAME" -o json 2>/dev/null | grep -Eq '"node-role.kubernetes.io/control-plane"'
+}
+
 ensure_ip_stack() {
   GROUP="$1"
   GROUP_NS="$2"
@@ -257,7 +262,7 @@ sync_ip_plane() {
   trap 'rm -f "$NODES_FILE" "$PATH_ROUTES_FILE" "$ROUTE_NAMES_FILE" "$IP_NAMESPACES_FILE"' EXIT
 
   kubectl get nodes -l ech.bz/ingress-group="$GROUP" \
-    -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{"|"}{range .status.addresses[?(@.type=="ExternalIP")]}{.address}{end}{"\n"}{end}' \
+    -o go-template='{{range .items}}{{.metadata.name}}|{{range .status.conditions}}{{if eq .type "Ready"}}{{.status}}{{end}}{{end}}|{{if .metadata.labels}}{{index .metadata.labels "ech.bz/public-ip"}}{{end}}{{"\n"}}{{end}}' \
     | awk -F'|' '$2=="True" && $3!="" {print $1 "|" $3}' \
     | sort -u > "$NODES_FILE"
 
@@ -271,7 +276,9 @@ sync_ip_plane() {
 
   while IFS='|' read -r NODE_NAME NODE_IP; do
     [ -z "$NODE_NAME" ] && continue
-    ensure_ingress_only_taint "$NODE_NAME"
+    if ! node_is_control_plane "$NODE_NAME"; then
+      ensure_ingress_only_taint "$NODE_NAME"
+    fi
     IP_NS="$(node_ip_namespace "$GROUP" "$NODE_NAME")"
     WATCH_NAMESPACES="$(route_watch_namespaces "$GROUP_NS" "$IP_NS" "$PATH_ROUTES_FILE")"
     if [ -z "$WATCH_NAMESPACES" ]; then
