@@ -1,6 +1,6 @@
 name: ecli
 help: Cluster management CLI
-version: 0.1.4
+version: 0.1.5
 
 commands:
 - name: install
